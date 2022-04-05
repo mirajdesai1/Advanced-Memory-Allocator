@@ -1,0 +1,31 @@
+1) 
++------+--------+--------+-----------------+
+|      |  HWX   |  OPT   |      COMP       |
++------+--------+--------+-----------------+
+| List | 7.615s | 0.09s  | OPT(85x faster) |
+| Ivec | 9.85s  | 0.32s  | OPT(31x faster) |
++------+--------+--------+-----------------+
+
+
+2)
+
+
++------+-------+---------+-------------------+
+|      |  SYS  |   OPT   |       COMP        |
++------+-------+---------+-------------------+
+| List | 9.48s | 10.21s  | SYS(1.07x faster) |
+| Ivec | 1.56s | 10.08s  | SYS(6.5x faster)  |
++------+-------+---------+-------------------+
+
+
+
+3) We decided to use the bin design for our implementation. The idea was to set a list of bins as powers of 2 all the way up to 2048 (closest less than page size). If the size needed to be allocated is less than page size, then would simply determine the bin it falls into depending on the size and allocate one block of memory from the bins free list. We thought this was a good design because it is a good balance of memory optimization and runtime. To get the corresponding bin would be a logarithm or even constant operation since it can be done with a relatively simple math calculation. With the powers of 2 bins, we can assure the expected overhead would never be more than 2x or 200%. We also used thread local storage to keep track of our bins to maintain data safety  as each function receives a copy of the global thread to utilize. 
+
+
+4) We handle memory reuse through our xfree. If the user decides to free up some memory (via pointer), we now have some available memory to be reused. So in our free method we get the block/node that corresponds to that given pointer and insert it back into its proper location (corresponding bin). We can do this because we know the user will not use the memory anymore so we can add it back to our list of blocks for future use. This saves a ton of memory as we won't have to constantly keep blindly mmapping things the user gives to us.
+
+
+5) The most significant challenge for us in building the allocator was probably coming up with a design plan. Given the different options we had (buddy system, arenas, buckets), we spent a lot of time brainstorming which mechanism to use that would optimize memory and runtime. The bin approach jumped the most but it took some time to iron out how exactly we would know the available free blocks for each bin and how to quickly insert/remove.
+
+
+6) Yes, we would probably reuse the same design but add even more optimizatins. For one, we realized we could double the size of our list of bins by adding midpoint values. This would optimize memory as now if the user requested something like 67 bytes, we wouldn't give them a block of 128, but rather a block of 96 thus keeping more memory for future use. Also, we realized that in order to generate the list of blocks for each bin, it was an O(n) operation since we would take the page size and divide it into the value of the bins and then loop through to create each node in the linked list. However, if we instead created another list of length number of bins and kept track of how many free blocks each bin had (as a number) we could avoid these O(n) operations to initialize each bin. Then, we would just have one mmap and keep adding size of bin to the memory address to get the next free block.
